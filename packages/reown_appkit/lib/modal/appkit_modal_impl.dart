@@ -793,7 +793,16 @@ class ReownAppKitModal
 
   @override
   Future<void> openWalletView() {
-    return _showModalView(startWidget: ConnectWalletPage());
+    Widget? startWidget = ConnectWalletPage();
+    final smartAccounts = _currentSession?.sessionSmartAccounts;
+    final isMagic = _currentSession?.sessionService.isMagic == true;
+    final embeddedWallet = isMagic || (smartAccounts ?? []).isNotEmpty;
+    if (_isConnected) {
+      startWidget = embeddedWallet
+          ? const WalletFeaturesPage()
+          : const AccountPage();
+    }
+    return _showModalView(startWidget: startWidget);
   }
 
   @override
