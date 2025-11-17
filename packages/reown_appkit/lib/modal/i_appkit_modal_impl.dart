@@ -86,6 +86,8 @@ abstract class IReownAppKitModal with ChangeNotifier {
 
   Future<void> openDepositView();
 
+  Future<void> openWalletView();
+
   /// Opens the modal with the provided [startWidget] (if any).
   /// If none is provided, the default state will be used based on platform.
   Future<void> openModalView([Widget? startWidget]);
