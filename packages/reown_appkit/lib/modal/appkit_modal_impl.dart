@@ -1096,6 +1096,7 @@ class ReownAppKitModal
   Future<void> buildConnectionUri() async {
     if (!_isConnected) {
       try {
+        await reconnectRelay();
         if (_siweService.enabled) {
           final walletRedirect = _explorerService.getWalletRedirect(
             _selectedWallet,
@@ -1124,9 +1125,10 @@ class ReownAppKitModal
           _notify();
           _awaitOCAuthCallback(authResponse);
         } else {
-          // Regular Session Proposal
           final connectResponse = await _appKit.connect(
             optionalNamespaces: _sessionNamespaces,
+            // TODO implement `authentication` param to support 1CA for non-EVM
+            // authentication: [authParams],
           );
           _wcUri = connectResponse.uri?.toString() ?? '';
           _notify();
@@ -1318,8 +1320,9 @@ class ReownAppKitModal
     } catch (_) {}
 
     if (!_appKit.core.relayClient.isConnected) {
-      onModalError.broadcast(ModalError('Websocket is not connected'));
-      return;
+      // onModalError.broadcast(ModalError('Websocket is not connected'));
+      // return;
+      await reconnectRelay();
     }
 
     _status = ReownAppKitModalStatus.initializing;
@@ -1438,6 +1441,7 @@ class ReownAppKitModal
     _blockchainService.selectSendToken(null);
     _dweService.stopCheckingStatus();
     _dweService.clearState();
+    _analyticsService.sendStoredEvents();
     _analyticsService.sendEvent(ModalCloseEvent(connected: _isConnected));
   }
 
@@ -1499,11 +1503,12 @@ class ReownAppKitModal
 
       final rawCallResponse = await _blockchainService.rawCall(
         chainId: chainId,
-        params: params,
+        method: 'eth_call',
+        params: [params, 'latest'],
       );
-      return deployedContract
-          .function(functionName)
-          .decodeReturnValues(rawCallResponse);
+      final result = rawCallResponse.result as String;
+
+      return deployedContract.function(functionName).decodeReturnValues(result);
     } catch (e, s) {
       _appKit.core.logger.e(
         '[$runtimeType] requestReadContract, error: $e, $s',
@@ -1577,6 +1582,19 @@ class ReownAppKitModal
   }
 
   @override
+  Future<JsonRpcResponse> rpcRequest({
+    required String chainId,
+    required String method,
+    required List<dynamic> params,
+  }) async {
+    return await _blockchainService.rawCall(
+      chainId: chainId,
+      method: method,
+      params: params,
+    );
+  }
+
+  @override
   Future<dynamic> request({
     required String? topic,
     required String chainId,
@@ -1634,19 +1652,14 @@ class ReownAppKitModal
     } catch (e) {
       if (_isUserRejectedError(e)) {
         onModalError.broadcast(UserRejectedRequest());
-        if (request.method == MethodsConstants.walletSwitchEthChain ||
-            request.method == MethodsConstants.walletAddEthChain) {
-          rethrow;
-        }
-        return Errors.getSdkError(Errors.USER_REJECTED).toJson();
       } else {
         if (e is CoinbaseServiceException) {
           // If the error is due to no session on Coinbase Wallet we disconnnect the session on Modal.
           // This is the only way to detect a missing session since Coinbase Wallet is not sending any event.
           throw ReownAppKitModalException('Coinbase Wallet Error');
         }
-        rethrow;
       }
+      rethrow;
     }
   }
 
@@ -1713,6 +1726,9 @@ class ReownAppKitModal
 
   @override
   final Event<SessionEvent> onSessionEventEvent = Event();
+
+  @override
+  final Event<DepositSuccessEvent> onDepositSuccess = Event();
 
   ////////* PRIVATE METHODS */////////
 
@@ -1932,18 +1948,15 @@ class ReownAppKitModal
   }
 
   bool _isUserRejectedError(dynamic e) {
+    if (e is JsonRpcError) {
+      return e.isUserRejected;
+    }
+
     final regexp = RegExp(
       r'\b(rejected|cancelled|disapproved|denied)\b',
       caseSensitive: false,
     );
 
-    if (e is JsonRpcError) {
-      final code = (e.code ?? 0);
-      final match = RegExp(r'\b500[0-3]\b').hasMatch(code.toString());
-      if (match || code == Errors.getSdkError(Errors.USER_REJECTED_SIGN).code) {
-        return true;
-      }
-    }
     if (e is CoinbaseServiceException) {
       if (regexp.hasMatch(e.error.toString()) ||
           regexp.hasMatch(e.message.toString())) {
@@ -2467,15 +2480,15 @@ extension _AppKitModalExtension on ReownAppKitModal {
 
   void _onSessionConnect(SessionConnect? args) async {
     if (args == null || (_supportsOneClickAuth && _siweService.enabled)) {
+      // Will be handled by _onSessionAuthResponse
       return;
     }
 
-    // IF SIWE CALLBACK (1-CA NOT SUPPORTED) SIWECONGIF METHODS ARE CALLED ON ApproveSIWEPage
-    _appKit.core.logger.d(
-      '[$runtimeType] _onSessionConnect: ${jsonEncode(args.session.toJson())}',
-    );
     final session = await _settleSession(args.session);
     onModalConnect.broadcast(ModalConnect(session));
+    _appKit.core.logger.d(
+      '[$runtimeType] _onSessionConnect: ${jsonEncode(session.toJson())}',
+    );
     //
     if (_pendingSocialLogin != null) {
       final provider = _pendingSocialLogin!.name.toLowerCase();

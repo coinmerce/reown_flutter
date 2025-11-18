@@ -52,15 +52,12 @@ class AssetSelectorPage extends StatelessWidget {
                 ),
               ),
               ...supportedAssets.mapIndexed((_, asset) {
-                final imageId = ReownAppKitModalNetworks.getNetworkIconId(
-                  asset.network,
-                );
-                final chainIcon = GetIt.I<IExplorerService>().getAssetImageUrl(
-                  imageId,
-                );
                 final networkInfo = ReownAppKitModalNetworks.getNetworkInfo(
                   asset.network,
                   asset.network,
+                );
+                final chainIcon = GetIt.I<IExplorerService>().getChainIcon(
+                  networkInfo,
                 );
                 final subtitle =
                     networkInfo?.name != null && _dweService.showNetworkIcon
@@ -121,7 +118,7 @@ class AssetSelectorPage extends StatelessWidget {
                         color: themeColors.foreground200,
                       ),
                       onTap: () {
-                        _dweService.configDeposit(preselectedAsset: asset);
+                        // _dweService.configDeposit(preselectedAsset: asset);
                         _dweService.selectedAsset.value = asset;
                         // if (_dweService.enableNetworkSelection) {
                         //   _widgetStack.popUntil(KeyConstants.depositPageKey);

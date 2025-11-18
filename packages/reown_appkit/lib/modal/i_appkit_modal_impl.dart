@@ -173,6 +173,12 @@ abstract class IReownAppKitModal with ChangeNotifier {
     required SessionRequestParams request,
   });
 
+  Future<JsonRpcResponse> rpcRequest({
+    required String chainId,
+    required String method,
+    required List<dynamic> params,
+  });
+
   Future<void> requestSwitchToChain(ReownAppKitModalNetworkInfo newChain);
   Future<void> requestAddChain(ReownAppKitModalNetworkInfo newChain);
 
@@ -195,4 +201,6 @@ abstract class IReownAppKitModal with ChangeNotifier {
   abstract final Event<SessionExpire> onSessionExpireEvent;
   abstract final Event<SessionUpdate> onSessionUpdateEvent;
   abstract final Event<SessionEvent> onSessionEventEvent;
+
+  abstract final Event<DepositSuccessEvent> onDepositSuccess;
 }

@@ -5,14 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:reown_appkit/reown_appkit.dart';
 import 'package:reown_appkit_dapp/utils/constants.dart';
 import 'package:reown_appkit_dapp/utils/crypto/helpers.dart';
+import 'package:reown_appkit_dapp/utils/crypto/tron.dart';
 import 'package:reown_appkit_dapp/widgets/method_dialog.dart';
 import 'package:toastification/toastification.dart';
 
 class ConnectPage extends StatefulWidget {
-  const ConnectPage({
-    super.key,
-    required this.appKitModal,
-  });
+  const ConnectPage({super.key, required this.appKitModal});
 
   final ReownAppKitModal appKitModal;
 
@@ -32,15 +30,11 @@ class ConnectPageState extends State<ConnectPage> {
     widget.appKitModal.onModalDisconnect.subscribe(_onModalDisconnect);
     widget.appKitModal.onModalError.subscribe(_onModalError);
     //
-    widget.appKitModal.appKit!.onSessionConnect.subscribe(
-      _onSessionConnect,
-    );
+    widget.appKitModal.appKit!.onSessionConnect.subscribe(_onSessionConnect);
     widget.appKitModal.appKit!.onSessionAuthResponse.subscribe(
       _onSessionAuthResponse,
     );
-    widget.appKitModal.onModalDisconnect.subscribe(
-      _onModalDisconnect,
-    );
+    widget.appKitModal.onModalDisconnect.subscribe(_onModalDisconnect);
   }
 
   @override
@@ -50,15 +44,11 @@ class ConnectPageState extends State<ConnectPage> {
     widget.appKitModal.onModalNetworkChange.unsubscribe(_onModalNetworkChange);
     widget.appKitModal.onModalDisconnect.unsubscribe(_onModalDisconnect);
     widget.appKitModal.onModalError.unsubscribe(_onModalError);
-    widget.appKitModal.onModalDisconnect.unsubscribe(
-      _onModalDisconnect,
-    );
+    widget.appKitModal.onModalDisconnect.unsubscribe(_onModalDisconnect);
     widget.appKitModal.appKit!.onSessionAuthResponse.unsubscribe(
       _onSessionAuthResponse,
     );
-    widget.appKitModal.appKit!.onSessionConnect.unsubscribe(
-      _onSessionConnect,
-    );
+    widget.appKitModal.appKit!.onSessionConnect.unsubscribe(_onSessionConnect);
     super.dispose();
   }
 
@@ -98,7 +88,7 @@ class ConnectPageState extends State<ConnectPage> {
                   color: isDarkMode
                       ? Colors.black.withValues(alpha: 0.8)
                       : Colors.white.withValues(alpha: 0.8),
-                )
+                ),
               ],
             ),
           ),
@@ -108,9 +98,7 @@ class ConnectPageState extends State<ConnectPage> {
             ),
             children: <Widget>[
               const SizedBox(height: StyleConstants.linear16),
-              _TitleSection(
-                appKitModal: widget.appKitModal,
-              ),
+              _TitleSection(appKitModal: widget.appKitModal),
               const SizedBox(height: StyleConstants.linear8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -143,9 +131,7 @@ class ConnectPageState extends State<ConnectPage> {
                 visible: widget.appKitModal.isConnected,
                 child: Column(
                   children: [
-                    AppKitModalAccountButton(
-                      appKitModal: widget.appKitModal,
-                    ),
+                    AppKitModalAccountButton(appKitModal: widget.appKitModal),
                     const SizedBox.square(dimension: 8.0),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -166,19 +152,15 @@ class ConnectPageState extends State<ConnectPage> {
                       'Connected with ${widget.appKitModal.session?.connectedWalletName ?? 'Unknown wallet'}',
                     ),
                     const SizedBox.square(dimension: 8.0),
-                    _RequestButtons(
-                      appKitModal: widget.appKitModal,
-                    ),
+                    _RequestButtons(appKitModal: widget.appKitModal),
                     const SizedBox.square(dimension: 8.0),
-                    _SmartAccountButtons(
-                      appKitModal: widget.appKitModal,
-                    ),
+                    _SmartAccountButtons(appKitModal: widget.appKitModal),
                     const SizedBox.square(dimension: 8.0),
                     Text(
-                      const JsonEncoder.withIndent('    ').convert(
-                        widget.appKitModal.session?.toJson(),
-                      ),
-                    )
+                      const JsonEncoder.withIndent(
+                        '    ',
+                      ).convert(widget.appKitModal.session?.toJson()),
+                    ),
                   ],
                 ),
               ),
@@ -313,19 +295,30 @@ class __RequestButtonsState extends State<_RequestButtons> {
                 //     future,
                 //   );
                 // } else {
-                final params = await getParams(method, address, chainInfo!);
+                final params = await getParams(
+                  method,
+                  address,
+                  chainInfo!,
+                  session: widget.appKitModal.session,
+                );
                 if (params?.params != null) {
                   final future = widget.appKitModal.request(
                     topic: topic,
                     chainId: chainId,
                     request: params!,
                   );
-                  await MethodDialog.show(
+                  final result = await MethodDialog.show(
                     context,
                     method,
                     future,
                   );
-                  // debugPrint(result);
+                  if (params.method == 'tron_signTransaction') {
+                    final broadcast = Tron.broadcastTransaction(
+                      chainData: chainInfo,
+                      signedTransaction: result,
+                    );
+                    await MethodDialog.show(context, 'Broadcast', broadcast);
+                  }
                 } else {
                   toastification.show(
                     type: ToastificationType.error,
@@ -365,10 +358,7 @@ class __SmartAccountButtonsState extends State<_SmartAccountButtons> {
     }
 
     return FutureBuilder<Widget>(
-      future: contractCallsButton(
-        widget.appKitModal,
-        context,
-      ),
+      future: contractCallsButton(widget.appKitModal, context),
       builder: (context, snapshot) {
         return snapshot.data ?? SizedBox.shrink();
       },

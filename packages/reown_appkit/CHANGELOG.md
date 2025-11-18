@@ -1,3 +1,19 @@
+## 1.7.5
+
+- Bug fix on Deposit With Exchange
+
+## 1.7.4
+
+- One Click Auth for non-EVM chains
+
+## 1.7.3
+
+- New onDepositSuccess event for `Deposit with Exchange` feature
+
+## 1.7.2
+
+- Performance improvements
+
 ## 1.7.1
 
 - Analytics enhancements

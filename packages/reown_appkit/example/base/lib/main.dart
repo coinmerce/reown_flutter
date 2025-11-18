@@ -22,21 +22,21 @@ import 'package:reown_appkit_dapp/widgets/event_widget.dart';
 import 'package:reown_appkit_dapp/widgets/log_overlay.dart';
 
 Future<void> main() async {
-  await runZonedGuarded<Future<void>>(() async {
-    WidgetsFlutterBinding.ensureInitialized();
-    DeepLinkHandler.initListener();
+  await runZonedGuarded<Future<void>>(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
+      DeepLinkHandler.initListener();
 
-    if (kDebugMode) {
-      runApp(MyApp());
-    } else {
-      // Catch Flutter framework errors
-      FlutterError.onError = (FlutterErrorDetails details) {
-        FlutterError.presentError(details);
-        Sentry.captureException(details.exception, stackTrace: details.stack);
-      };
+      if (kDebugMode) {
+        runApp(MyApp());
+      } else {
+        // Catch Flutter framework errors
+        FlutterError.onError = (FlutterErrorDetails details) {
+          FlutterError.presentError(details);
+          Sentry.captureException(details.exception, stackTrace: details.stack);
+        };
 
-      await SentryFlutter.init(
-        (options) {
+        await SentryFlutter.init((options) {
           options.dsn = DartDefines.sentryDSN;
           options.environment = kDebugMode ? 'debug_app' : 'deployed_app';
           options.attachScreenshot = true;
@@ -49,21 +49,17 @@ Future<void> main() async {
           // The sampling rate for profiling is relative to tracesSampleRate
           // Setting to 1.0 will profile 100% of sampled transactions:
           options.profilesSampleRate = 1.0;
-        },
-        appRunner: () => runApp(
-          SentryWidget(
-            child: const MyApp(),
-          ),
-        ),
-      );
-    }
-  }, (error, stackTrace) async {
-    if (!kDebugMode) {
-      await Sentry.captureException(error, stackTrace: stackTrace);
-    }
-    debugPrint('Uncaught error: $error');
-    debugPrint('Stack trace: $stackTrace');
-  });
+        }, appRunner: () => runApp(SentryWidget(child: const MyApp())));
+      }
+    },
+    (error, stackTrace) async {
+      if (!kDebugMode) {
+        await Sentry.captureException(error, stackTrace: stackTrace);
+      }
+      debugPrint('Uncaught error: $error');
+      debugPrint('Stack trace: $stackTrace');
+    },
+  );
 }
 
 class MyApp extends StatefulWidget {
@@ -146,9 +142,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             )
           : null,
       child: MaterialApp(
-        navigatorObservers: [
-          SentryNavigatorObserver(),
-        ],
+        navigatorObservers: [SentryNavigatorObserver()],
         title: StringConstants.appTitle,
         theme: ThemeData(
           colorScheme: _isDarkMode
@@ -160,12 +154,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                 ),
         ),
         home: MyHomePage(
-            isCustomTheme: _isCustomTheme,
-            toggleTheme: () {
-              setState(() {
-                _isCustomTheme = !_isCustomTheme;
-              });
-            }),
+          isCustomTheme: _isCustomTheme,
+          toggleTheme: () {
+            setState(() {
+              _isCustomTheme = !_isCustomTheme;
+            });
+          },
+        ),
       ),
     );
   }
@@ -268,29 +263,44 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void _logListener(String event) => _logManager.addLog(event);
 
+  Future<double> _getBalanceFallback() async {
+    try {
+      final chainId = _appKitModal!.selectedChain!.chainId;
+      final namespace = NamespaceUtils.getNamespaceFromChain(chainId);
+      final address = _appKitModal!.session!.getAddress(namespace)!;
+
+      final JsonRpcResponse response = await _appKitModal!.rpcRequest(
+        chainId: chainId,
+        method: 'eth_getBalance',
+        params: [address, 'latest'],
+      );
+      debugPrint('[$runtimeType] _getBalance ${response.result}');
+      // parse hex balance
+      final parsedBalance = hexToInt(response.result);
+      final balance = EtherAmount.fromBigInt(EtherUnit.wei, parsedBalance);
+      return balance.getValueInUnit(EtherUnit.ether);
+    } catch (e) {
+      debugPrint('[$runtimeType] _getBalance error: $e');
+    }
+    return 0.0;
+  }
+
   Future<void> _initializeService() async {
     final prefs = await SharedPreferences.getInstance();
-    final linkModeEnabled = prefs.getBool('appkit_sample_linkmode') ?? true;
+    final linkModeEnabled = prefs.getBool('appkit_sample_linkmode') ?? false;
     final analyticsEnabled = prefs.getBool('appkit_sample_analytics') ?? true;
     final socialsEnabled = prefs.getBool('appkit_sample_socials') ?? true;
 
     _appKit = ReownAppKit(
-      core: ReownCore(
-        projectId: DartDefines.projectId,
-        logLevel: LogLevel.all,
-      ),
+      core: ReownCore(projectId: DartDefines.projectId, logLevel: LogLevel.all),
       metadata: _pairingMetadata(linkModeEnabled),
     );
 
     // Register event handlers
-    _appKit!.core.relayClient.onRelayClientError.subscribe(
-      _relayClientError,
-    );
+    _appKit!.core.relayClient.onRelayClientError.subscribe(_relayClientError);
     _appKit!.core.relayClient.onRelayClientConnect.subscribe(_setState);
     _appKit!.core.relayClient.onRelayClientDisconnect.subscribe(_setState);
-    _appKit!.core.relayClient.onRelayClientMessage.subscribe(
-      _onRelayMessage,
-    );
+    _appKit!.core.relayClient.onRelayClientMessage.subscribe(_onRelayMessage);
 
     // See https://docs.reown.com/appkit/flutter/core/custom-chains
     // final extraChains = ReownAppKitModalNetworks.extra['eip155']!;
@@ -298,7 +308,7 @@ class _MyHomePageState extends State<MyHomePage> {
     // ReownAppKitModalNetworks.removeSupportedNetworks('solana');
     // ReownAppKitModalNetworks.removeTestNetworks();
 
-    _addOrRemoveNetworks(linkModeEnabled);
+    _removeChainsIfNecessary(linkModeEnabled);
 
     _appKitModal = ReownAppKitModal(
       context: context,
@@ -308,15 +318,12 @@ class _MyHomePageState extends State<MyHomePage> {
       siweConfig: _siweConfig(linkModeEnabled),
       featuresConfig: socialsEnabled ? _featuresConfig() : null,
       optionalNamespaces: _namespacesBasedOnChains(),
-      featuredWalletIds: _specificsWalletIds(),
-      // excludedWalletIds: {},
+      // featuredWalletIds: _specificsWalletIds(),
+      // excludedWalletIds: _specificsWalletIds(),
       // includedWalletIds: _specificsWalletIds(),
       // MORE WALLETS https://explorer.walletconnect.com/?type=wallet&chains=eip155%3A1
-      getBalanceFallback: () async {
-        // This method will be triggered if getting the balance from our blockchain API fails
-        // You could place here your own getBalance method
-        return 0.0;
-      },
+      getBalanceFallback: _getBalanceFallback,
+      // `getBalanceFallback` will be triggered if getting the balance from our blockchain API fails. You could place here your own getBalance method
       disconnectOnDispose: true,
       customWallets: [
         ReownAppKitModalWalletInfo(
@@ -409,102 +416,22 @@ class _MyHomePageState extends State<MyHomePage> {
       // Loop through the events for that chain
       final namespace = NamespaceUtils.getNamespaceFromChain(chain.chainId);
       for (final event in getChainEvents(namespace)) {
-        _appKit!.registerEventHandler(
-          chainId: chain.chainId,
-          event: event,
-        );
+        _appKit!.registerEventHandler(chainId: chain.chainId, event: event);
       }
     }
   }
 
   // Adds or remove supported networks based on linkMode
-  void _addOrRemoveNetworks(bool linkMode) {
+  void _removeChainsIfNecessary(bool linkMode) {
     if (linkMode) {
       // When linkMode is true, the application operates in "Link Mode",
       // which is designed to support only EVM-compatible networks.
       // As a result, non-EVM networks like Solana should be removed
-      ReownAppKitModalNetworks.removeSupportedNetworks('solana');
-    } else {
-      // When linkMode is false, the application supports a broader range of networks
-      ReownAppKitModalNetworks.addSupportedNetworks('polkadot', [
-        ReownAppKitModalNetworkInfo(
-          name: 'Polkadot',
-          chainId: '91b171bb158e2d3848fa23a9f1c25182',
-          chainIcon:
-              'https://pbs.twimg.com/profile_images/1944665239502323712/0FMaAZ31_400x400.jpg',
-          currency: 'DOT',
-          rpcUrl: 'wss://rpc.polkadot.io',
-          explorerUrl: 'https://polkadot.subscan.io',
-        ),
-        ReownAppKitModalNetworkInfo(
-          name: 'Westend',
-          chainId: 'e143f23803ac50e8f6f8e62695d1ce9e',
-          currency: 'WND',
-          rpcUrl: 'wss://westend-asset-hub-rpc.polkadot.io',
-          explorerUrl: 'https://westend.subscan.io',
-          isTestNetwork: true,
-        ),
-      ]);
-      ReownAppKitModalNetworks.addSupportedNetworks('tron', [
-        ReownAppKitModalNetworkInfo(
-          name: 'Tron',
-          chainId: '0x2b6653dc',
-          chainIcon:
-              'https://pbs.twimg.com/profile_images/1970541264568520704/J6wYDxYk_400x400.jpg',
-          currency: 'TRX',
-          rpcUrl: 'https://api.trongrid.io',
-          explorerUrl: 'https://tronscan.org',
-        ),
-        ReownAppKitModalNetworkInfo(
-          name: 'Tron testnet',
-          chainId: '0xcd8690dc',
-          currency: 'TRX',
-          rpcUrl: 'https://nile.trongrid.io',
-          explorerUrl: 'https://test.tronscan.org',
-          isTestNetwork: true,
-        ),
-      ]);
-      ReownAppKitModalNetworks.addSupportedNetworks('mvx', [
-        ReownAppKitModalNetworkInfo(
-          name: 'MultiversX',
-          chainId: '1',
-          currency: 'EGLD',
-          rpcUrl: 'https://api.multiversx.com',
-          explorerUrl: 'https://explorer.multiversx.com',
-          chainIcon:
-              'https://pbs.twimg.com/profile_images/1953134940301774848/UbIBbfXn_400x400.jpg',
-        ),
-      ]);
-      ReownAppKitModalNetworks.addSupportedNetworks('near', [
-        ReownAppKitModalNetworkInfo(
-          name: 'Near Mainnet',
-          chainId: 'mainnet',
-          currency: 'NEAR',
-          rpcUrl: 'https://rpc.mainnet.near.org',
-          explorerUrl: 'https://nearblocks.io',
-          chainIcon:
-              'https://pbs.twimg.com/profile_images/1970880320103985152/SAMA6Vh0_400x400.jpg',
-        ),
-        ReownAppKitModalNetworkInfo(
-          name: 'Near Testnet',
-          chainId: 'testnet',
-          currency: 'NEAR',
-          rpcUrl: 'https://rpc.testnet.near.org',
-          explorerUrl: 'https://testnet.nearblocks.io',
-          isTestNetwork: true,
-        ),
-      ]);
-      ReownAppKitModalNetworks.addSupportedNetworks('cosmos', [
-        ReownAppKitModalNetworkInfo(
-          name: 'Cosmos hub',
-          chainId: 'cosmoshub-4',
-          chainIcon:
-              'https://pbs.twimg.com/profile_images/1910273399282159616/OLSiIjEx_400x400.png',
-          currency: 'ATOM',
-          rpcUrl: 'https://rpc.cosmos.network',
-          explorerUrl: 'https://www.mintscan.io/cosmos/',
-        ),
-      ]);
+      final namespaces = ReownAppKitModalNetworks.getAllSupportedNamespaces()
+          .where((ns) => ns != 'eip155');
+      for (var ns in namespaces) {
+        ReownAppKitModalNetworks.removeSupportedNetworks(ns);
+      }
     }
   }
 
@@ -541,14 +468,9 @@ class _MyHomePageState extends State<MyHomePage> {
     final allChains = ReownAppKitModalNetworks.getAllSupportedNetworks();
     for (final chain in allChains) {
       // Loop through the events for that chain
-      final namespace = NamespaceUtils.getNamespaceFromChain(
-        chain.chainId,
-      );
+      final namespace = NamespaceUtils.getNamespaceFromChain(chain.chainId);
       for (final event in getChainEvents(namespace)) {
-        _appKit!.registerEventHandler(
-          chainId: chain.chainId,
-          event: event,
-        );
+        _appKit!.registerEventHandler(chainId: chain.chainId, event: event);
       }
     }
   }
@@ -565,14 +487,10 @@ class _MyHomePageState extends State<MyHomePage> {
     // Unregister event handlers
     _appKitModal!.appKit!.core.removeLogListener(_logListener);
 
-    _appKit!.core.relayClient.onRelayClientError.unsubscribe(
-      _relayClientError,
-    );
+    _appKit!.core.relayClient.onRelayClientError.unsubscribe(_relayClientError);
     _appKit!.core.relayClient.onRelayClientConnect.unsubscribe(_setState);
     _appKit!.core.relayClient.onRelayClientDisconnect.unsubscribe(_setState);
-    _appKit!.core.relayClient.onRelayClientMessage.unsubscribe(
-      _onRelayMessage,
-    );
+    _appKit!.core.relayClient.onRelayClientMessage.unsubscribe(_onRelayMessage);
     //
     _appKitModal!.onModalConnect.unsubscribe(_onModalConnect);
     _appKitModal!.onModalUpdate.unsubscribe(_onModalUpdate);
@@ -595,11 +513,7 @@ class _MyHomePageState extends State<MyHomePage> {
     if (MediaQuery.of(context).size.width >= Constants.smallScreen) {
       navRail.add(_buildNavigationRail());
     }
-    navRail.add(
-      Expanded(
-        child: _pageDatas[_selectedIndex].page,
-      ),
-    );
+    navRail.add(Expanded(child: _pageDatas[_selectedIndex].page));
 
     return Scaffold(
       appBar: AppBar(
@@ -622,9 +536,7 @@ class _MyHomePageState extends State<MyHomePage> {
               constraints: BoxConstraints(
                 maxWidth: Constants.smallScreen.toDouble(),
               ),
-              child: Row(
-                children: navRail,
-              ),
+              child: Row(children: navRail),
             ),
           ),
           if (_showLogOverlay)
@@ -658,20 +570,15 @@ class _MyHomePageState extends State<MyHomePage> {
       // called when one tab is selected
       onTap: (index) => setState(() => _selectedIndex = index),
       // bottom tab items
-      items: _pageDatas.map(
-        (e) {
-          return BottomNavigationBarItem(
-            icon: Semantics(
-              label: '${e.title} page button',
-              child: Icon(
-                e.icon,
-                semanticLabel: '${e.title} page icon',
-              ),
-            ),
-            label: e.title,
-          );
-        },
-      ).toList(),
+      items: _pageDatas.map((e) {
+        return BottomNavigationBarItem(
+          icon: Semantics(
+            label: '${e.title} page button',
+            child: Icon(e.icon, semanticLabel: '${e.title} page icon'),
+          ),
+          label: e.title,
+        );
+      }).toList(),
     );
   }
 
@@ -754,10 +661,7 @@ class _MyHomePageState extends State<MyHomePage> {
           final address = SIWEUtils.getAddressFromMessage(args.message);
           final cacaoSignature = args.cacao != null
               ? args.cacao!.s
-              : CacaoSignature(
-                  t: CacaoSignature.EIP191,
-                  s: args.signature,
-                );
+              : CacaoSignature(t: CacaoSignature.EIP191, s: args.signature);
           return await SIWEUtils.verifySignature(
             address,
             args.message,
@@ -796,10 +700,12 @@ class _MyHomePageState extends State<MyHomePage> {
   void _onModalConnect(ModalConnect? event) async {
     debugPrint('[ExampleApp] _onModalConnect ${event?.session.toJson()}');
     setState(() {});
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('AppKit is connected'),
-      duration: Duration(seconds: 2),
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('AppKit is connected'),
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   void _onModalUpdate(ModalConnect? event) {
@@ -826,11 +732,13 @@ class _MyHomePageState extends State<MyHomePage> {
       _appKitModal!.disconnect();
     }
     setState(() {});
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(
-        event?.message ?? event?.description ?? 'An error occurred',
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          event?.message ?? event?.description ?? 'An error occurred',
+        ),
+        duration: Duration(seconds: 2),
       ),
-      duration: Duration(seconds: 2),
-    ));
+    );
   }
 }
