@@ -1,3 +1,6 @@
+# Use git source to avoid CDN propagation delays
+source 'https://github.com/CocoaPods/Specs.git'
+
 # Uncomment this line to define a global platform for your project
 platform :ios, '13.0'
 
@@ -35,6 +38,10 @@ target 'Runner' do
   use_modular_headers!
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+
+  # Local Yttrium development - override CocoaPods version with local build
+  # Comment out to use published version
+  # pod 'YttriumUtilsWrapper', :path => '/path/to/yttrium/local'
 end
 
 post_install do |installer|

@@ -268,6 +268,7 @@ class _MyHomePageState extends State<MyHomePage> {
       final chainId = _appKitModal!.selectedChain!.chainId;
       final namespace = NamespaceUtils.getNamespaceFromChain(chainId);
       final address = _appKitModal!.session!.getAddress(namespace)!;
+      if (namespace != 'eip155') return 0.0;
 
       final JsonRpcResponse response = await _appKitModal!.rpcRequest(
         chainId: chainId,
@@ -406,6 +407,17 @@ class _MyHomePageState extends State<MyHomePage> {
 
     await _appKitModal!.init();
     await _registerEventHandlers();
+
+    // CONFIGURE THE FEATURE BEFORE USING IT
+    final filteredAssets = _appKitModal!.getPaymentAssetsForNetwork(
+      // chainId: widget.appKitModal.selectedChain?.chainId,
+      includeNative: true,
+      includeTest: true,
+    );
+    _appKitModal!.configDeposit(
+      supportedAssets: filteredAssets,
+      filterByNetwork: false,
+    );
 
     DeepLinkHandler.init(_appKitModal!);
     DeepLinkHandler.checkInitialLink();

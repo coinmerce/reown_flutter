@@ -5,17 +5,9 @@ echo "******* GENERATING ROOT *******"
 flutter clean
 flutter pub get
 
-echo "******* GENERATING CORE *******"
+echo "******* GENERATING WALLETCONNECTPAY *******"
 
-cd packages/reown_core/
-sh generate_files.sh
-
-cd ..
-cd ..
-
-echo "******* GENERATING SIGN *******"
-
-cd packages/reown_sign/
+cd packages/walletconnect_pay/
 sh generate_files.sh
 
 cd ..
@@ -29,9 +21,17 @@ sh generate_files.sh
 cd ..
 cd ..
 
-echo "******* GENERATING YTTRIUM UTILS *******"
+echo "******* GENERATING CORE *******"
 
-cd packages/reown_yttrium_utils/
+cd packages/reown_core/
+sh generate_files.sh
+
+cd ..
+cd ..
+
+echo "******* GENERATING SIGN *******"
+
+cd packages/reown_sign/
 sh generate_files.sh
 
 cd ..
@@ -53,6 +53,14 @@ sh generate_files.sh
 cd ..
 cd ..
 
+echo "******* GENERATING POS CLIENT *******"
+
+cd packages/pos_client/
+sh generate_files.sh
+
+cd ..
+cd ..
+
 echo "******* GENERATING CLI *******"
 
 cd packages/reown_cli/
@@ -61,10 +69,11 @@ sh generate_files.sh
 cd ..
 cd ..
 
-echo "******* GENERATING POS CLIENT *******"
+echo "******* GENERATING YTTRIUM UTILS *******"
 
-cd packages/pos_client/
+cd packages/reown_yttrium_utils/
 sh generate_files.sh
 
 cd ..
 cd ..
+

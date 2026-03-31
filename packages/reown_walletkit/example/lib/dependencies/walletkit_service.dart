@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' hide Action;
 import 'package:get_it/get_it.dart';
 import 'package:reown_walletkit/reown_walletkit.dart';
 import 'package:reown_walletkit_wallet/dependencies/bottom_sheet/i_bottom_sheet_service.dart';
@@ -23,43 +24,31 @@ import 'package:reown_walletkit_wallet/models/chain_metadata.dart';
 import 'package:reown_walletkit_wallet/utils/dart_defines.dart';
 import 'package:reown_walletkit_wallet/utils/eth_utils.dart';
 import 'package:reown_walletkit_wallet/utils/methods_utils.dart';
-import 'package:reown_walletkit_wallet/widgets/wc_connection_request/wc_connection_request_widget.dart';
-import 'package:reown_walletkit_wallet/widgets/wc_request_widget.dart/wc_request_widget.dart';
-import 'package:reown_walletkit_wallet/widgets/wc_request_widget.dart/wc_session_auth_request_widget.dart';
+import 'package:reown_walletkit_wallet/walletconnect_pay/wcp_modals/wcp_confirming_payment.dart';
+import 'package:reown_walletkit_wallet/walletconnect_pay/wcp_modals/wcp_get_payment_options.dart';
+import 'package:reown_walletkit_wallet/walletconnect_pay/wcp_modals/wcp_payment_details.dart';
+import 'package:reown_walletkit_wallet/walletconnect_pay/wcp_shared_widgets.dart';
+import 'package:reown_walletkit_wallet/walletconnect_pay/wcp_modals/wcp_payment_result.dart';
+import 'package:reown_walletkit_wallet/widgets/wc_connection_request/wc_connect_modal.dart';
+import 'package:reown_walletkit_wallet/main.dart' show navigatorKey;
 import 'package:shared_preferences/shared_preferences.dart';
 
-class WalletKitService extends IWalletKitService {
+class WalletKitService implements IWalletKitService {
   final _bottomSheetHandler = GetIt.I<IBottomSheetService>();
+
+  ConfirmPaymentRequest? _pendingPaymentRequest;
+  PaymentOptionsResponse? _currentPaymentOptions;
+
   ReownWalletKit? _walletKit;
+  @override
+  ReownWalletKit get walletKit => _walletKit!;
 
-  String get _flavor {
-    String flavor = '-${const String.fromEnvironment('FLUTTER_APP_FLAVOR')}';
-    return flavor.replaceAll('-production', '');
-  }
-
-  String _universalLink() {
-    Uri link = Uri.parse('https://appkit-lab.reown.com/flutter_walletkit');
-    if (_flavor.isNotEmpty || kDebugMode) {
-      return link.replace(path: '${link.path}_internal').toString();
-    }
-    return link.toString();
-  }
-
-  Redirect _constructRedirect(bool linkModeEnabled) {
-    return Redirect(
-      native: 'wcflutterwallet$_flavor://',
-      universal: _universalLink(),
-      // enable linkMode on Wallet so Dapps can use relay-less connection
-      // universal: value must be set on cloud config as well
-      linkMode: linkModeEnabled,
-    );
-  }
+  @override
+  IPairingStore? get pairings => _walletKit?.pairings;
 
   @override
   final ValueNotifier<ChainMetadata?> currentSelectedChain = ValueNotifier(
-    ChainsDataList.eip155Chains.firstWhere(
-      (e) => e.chainId == 'eip155:1',
-    ),
+    ChainsDataList.eip155Chains.firstWhere((e) => e.chainId == 'eip155:1'),
   );
 
   @override
@@ -69,16 +58,13 @@ class WalletKitService extends IWalletKitService {
 
     // Create the ReownWalletKit instance
     _walletKit = ReownWalletKit(
-      core: ReownCore(
-        projectId: DartDefines.projectId,
-        logLevel: LogLevel.all,
-      ),
+      core: ReownCore(projectId: DartDefines.projectId, logLevel: LogLevel.all),
       metadata: PairingMetadata(
-        name: 'FL WalletKit Sample',
+        name: 'Flutter Wallet Sample',
         description: 'Reown\'s sample wallet with Flutter',
         url: _universalLink(),
         icons: [
-          'https://raw.githubusercontent.com/reown-com/reown_flutter/refs/heads/develop/assets/walletkit-icon$_flavor.png'
+          'https://raw.githubusercontent.com/reown-com/reown_flutter/refs/heads/develop/assets/walletkit-icon$_flavor.png',
         ],
         redirect: _constructRedirect(linkModeEnabled),
       ),
@@ -153,44 +139,51 @@ class WalletKitService extends IWalletKitService {
 
     // Support Tron Chains
     for (final chainData in ChainsDataList.tonChains) {
-      GetIt.I.registerSingletonAsync<TonService>(
-        () async {
-          final tonService = TonService(chainSupported: chainData);
-          await tonService.init();
-          return tonService;
-        },
-        instanceName: chainData.chainId,
-      );
+      GetIt.I.registerSingletonAsync<TonService>(() async {
+        final tonService = TonService(chainSupported: chainData);
+        await tonService.init();
+        return tonService;
+      }, instanceName: chainData.chainId);
     }
 
     // Support Stacks Chains
     for (final chainData in ChainsDataList.stacksChains) {
-      GetIt.I.registerSingletonAsync<StacksService>(
-        () async {
-          final stacksService = StacksService(chainSupported: chainData);
-          await stacksService.init();
-          return stacksService;
-        },
-        instanceName: chainData.chainId,
-      );
+      GetIt.I.registerSingletonAsync<StacksService>(() async {
+        final stacksService = StacksService(chainSupported: chainData);
+        await stacksService.init();
+        return stacksService;
+      }, instanceName: chainData.chainId);
     }
 
     // Support Sui Chains
     for (final chainData in ChainsDataList.suiChains) {
-      GetIt.I.registerSingletonAsync<SUIService>(
-        () async {
-          final suiService = SUIService(chainSupported: chainData);
-          await suiService.init();
-          return suiService;
-        },
-        instanceName: chainData.chainId,
-      );
+      GetIt.I.registerSingletonAsync<SUIService>(() async {
+        final suiService = SUIService(chainSupported: chainData);
+        await suiService.init();
+        return suiService;
+      }, instanceName: chainData.chainId);
     }
   }
 
   @override
-  Future<void> setUpAccounts() async {
+  Future<void> init() async {
+    await _walletKit!.init();
+    await _emitEvent();
+  }
+
+  @override
+  Future<dynamic> pair(String uri) async {
+    if (_walletKit!.isPaymentLink(uri)) {
+      return await processPayment(uri);
+    } else {
+      return await _walletKit!.pair(uri: Uri.parse(uri));
+    }
+  }
+
+  @override
+  Future<List<String>> getWalletAccounts([String namespace = '']) async {
     // Setup our accounts
+    final List<String> accounts = [];
     List<ChainKey> chainKeys = await GetIt.I<IKeyService>().loadKeys();
     if (chainKeys.isEmpty) {
       await GetIt.I<IKeyService>().createRandomWallet();
@@ -199,29 +192,158 @@ class WalletKitService extends IWalletKitService {
     for (final chainKey in chainKeys) {
       for (final chainId in chainKey.chains) {
         if (chainId.startsWith('kadena')) {
-          final account = '$chainId:k**${chainKey.address}';
-          debugPrint('[SampleWallet] registerAccount $account');
-          _walletKit!.registerAccount(
-            chainId: chainId,
-            accountAddress: 'k**${chainKey.address}',
-          );
+          accounts.add('$chainId:k**${chainKey.address}');
         } else {
-          final account = '$chainId:${chainKey.address}';
-          debugPrint('[SampleWallet] registerAccount $account');
-          _walletKit!.registerAccount(
-            chainId: chainId,
-            accountAddress: chainKey.address,
-          );
+          accounts.add('$chainId:${chainKey.address}');
         }
       }
+    }
+    if (namespace.isNotEmpty) {
+      return accounts.where((a) => a.startsWith(namespace)).toList();
+    }
+    return accounts;
+  }
+
+  @override
+  Future<void> setUpAccounts() async {
+    // Setup our accounts
+    final accounts = await getWalletAccounts();
+    for (var account in accounts) {
+      final chainId = NamespaceUtils.getChainFromAccount(account);
+      final address = NamespaceUtils.getAccount(account);
+      _walletKit!.registerAccount(chainId: chainId, accountAddress: address);
     }
   }
 
   @override
-  Future<void> init() async {
-    // Await the initialization of the ReownWalletKit instance
-    await _walletKit!.init();
-    await _emitEvent();
+  List<(ISS, AuthMessage, AuthRequest)> prepareAuthenticationMessages(
+    List<SessionAuthPayload>? authenticationRequests,
+    Map<String, Namespace>? generatedNamespaces,
+  ) {
+    final List<(String, String, SessionAuthPayload)> formattedMessages = [];
+    if (authenticationRequests == null || authenticationRequests.isEmpty) {
+      return formattedMessages;
+    }
+
+    if (generatedNamespaces == null || generatedNamespaces.isEmpty) {
+      return formattedMessages;
+    }
+
+    for (var request in authenticationRequests) {
+      for (var chain in request.chains) {
+        try {
+          final namespace = NamespaceUtils.getNamespaceFromChain(chain);
+          final namespaces = generatedNamespaces[namespace];
+          final account = namespaces?.accounts.first;
+          if (account != null) {
+            final address = NamespaceUtils.getAccount(account);
+            final iss = 'did:pkh:$chain:$address';
+            final message = _walletKit!.formatAuthMessage(
+              iss: iss,
+              cacaoPayload: CacaoRequestPayload.fromSessionAuthPayload(request),
+            );
+            formattedMessages.add((iss, message, request));
+          }
+        } catch (e, s) {
+          debugPrint('❌ prepareAuthenticationMessages error: $e, $s');
+        }
+      }
+    }
+
+    return formattedMessages;
+  }
+
+  Future<void> processPayment(String paymentLink) async {
+    try {
+      // PaymentOptionsResponse
+      final accounts = await getWalletAccounts('eip155');
+      final optionsResponse = await _bottomSheetHandler.queueBottomSheet(
+        widget: WCPGetPaymentOptions(
+          paymentLink: paymentLink,
+          accounts: accounts,
+        ),
+      );
+
+      if (optionsResponse is! PaymentOptionsResponse) {
+        throw optionsResponse;
+      }
+
+      _currentPaymentOptions = optionsResponse;
+
+      if (_currentPaymentOptions!.options.isEmpty) {
+        _currentPaymentOptions = null;
+        throw 'No payment options available.\n\nThis wallet does not have any compatible tokens to complete this payment.';
+      }
+
+      _pendingPaymentRequest = ConfirmPaymentRequest(
+        paymentId: _currentPaymentOptions!.paymentId,
+        optionId: _currentPaymentOptions!.options.first.id,
+        signatures: [],
+      );
+
+      await _processPayment(_currentPaymentOptions!);
+    } catch (e) {
+      if (e == 'cancelled' || e == 'close') {
+        return;
+      }
+      rethrow;
+    }
+  }
+
+  /// Fetches payment options from the WalletConnect Pay API for the given payment link.
+  @override
+  Future<PaymentOptionsResponse> getPaymentOptions(
+    GetPaymentOptionsRequest request,
+  ) async {
+    final response = await _walletKit!.getPaymentOptions(request: request);
+    return response;
+  }
+
+  @override
+  Future<List<Action>> getRequiredPaymentActions(
+    String optionId,
+    String paymentId,
+  ) async {
+    final response = await _walletKit!.getRequiredPaymentActions(
+      request: GetRequiredPaymentActionsRequest(
+        optionId: optionId,
+        paymentId: paymentId,
+      ),
+    );
+    return response;
+  }
+
+  @override
+  Future<ConfirmPaymentResponse> confirmPayment(
+    ConfirmPaymentRequest payment,
+  ) async {
+    final response = await _walletKit!.confirmPayment(
+      request: payment.copyWith(maxPollMs: 60000),
+    );
+    return response;
+  }
+
+  @override
+  T getChainService<T extends Object>({required String chainId}) =>
+      GetIt.I.get<T>(instanceName: chainId);
+
+  @override
+  FutureOr onDispose() {
+    _walletKit!.core.removeLogListener(_logListener);
+
+    _walletKit!.core.pairing.onPairingInvalid.unsubscribe(_onPairingInvalid);
+    _walletKit!.core.pairing.onPairingCreate.unsubscribe(_onPairingCreate);
+    _walletKit!.core.relayClient.onRelayClientError.unsubscribe(
+      _onRelayClientError,
+    );
+    _walletKit!.core.relayClient.onRelayClientMessage.unsubscribe(
+      _onRelayClientMessage,
+    );
+
+    _walletKit!.onSessionProposal.unsubscribe(_onSessionProposal);
+    _walletKit!.onSessionProposalError.unsubscribe(_onSessionProposalError);
+    _walletKit!.onSessionConnect.unsubscribe(_onSessionConnect);
+    _walletKit!.onSessionAuthRequest.unsubscribe(_onSessionAuthRequest);
   }
 
   Future<void> _emitEvent() async {
@@ -258,32 +380,6 @@ class WalletKitService extends IWalletKitService {
     debugPrint('[WalletKit] $event');
   }
 
-  @override
-  FutureOr onDispose() {
-    _walletKit!.core.removeLogListener(_logListener);
-
-    _walletKit!.core.pairing.onPairingInvalid.unsubscribe(_onPairingInvalid);
-    _walletKit!.core.pairing.onPairingCreate.unsubscribe(_onPairingCreate);
-    _walletKit!.core.relayClient.onRelayClientError.unsubscribe(
-      _onRelayClientError,
-    );
-    _walletKit!.core.relayClient.onRelayClientMessage.unsubscribe(
-      _onRelayClientMessage,
-    );
-
-    _walletKit!.onSessionProposal.unsubscribe(_onSessionProposal);
-    _walletKit!.onSessionProposalError.unsubscribe(_onSessionProposalError);
-    _walletKit!.onSessionConnect.unsubscribe(_onSessionConnect);
-    _walletKit!.onSessionAuthRequest.unsubscribe(_onSessionAuthRequest);
-  }
-
-  @override
-  ReownWalletKit get walletKit => _walletKit!;
-
-  @override
-  T getChainService<T extends Object>({required String chainId}) =>
-      GetIt.I.get<T>(instanceName: chainId);
-
   List<String> get _loaderMethods => [
         MethodConstants.WC_SESSION_PROPOSE,
         MethodConstants.WC_SESSION_REQUEST,
@@ -307,46 +403,48 @@ class WalletKitService extends IWalletKitService {
     debugPrint('[SampleWallet] _onSessionProposal $debugString');
     if (args != null) {
       final proposer = args.params.proposer;
-      // Auth requests
-      final generatedNamespaces = args.params.generatedNamespaces;
-      final authenticationRequests = args.params.requests?.authentication;
-      final formattedMessages = prepareAuthenticationMessages(
-        authenticationRequests,
-        generatedNamespaces,
+
+      final result = await _bottomSheetHandler.queueBottomSheet(
+        widget: WCConnectModal(
+          proposalData: args.params,
+          verifyContext: args.verifyContext,
+          requester: proposer,
+        ),
       );
 
-      final result = (await _bottomSheetHandler.queueBottomSheet(
-            widget: WCRequestWidget(
-              verifyContext: args.verifyContext,
-              child: WCConnectionRequestWidget(
-                proposalData: args.params,
-                verifyContext: args.verifyContext,
-                requester: proposer,
-              ),
-            ),
-          )) ??
-          WCBottomSheetResult.reject;
+      if (result is ConnectApprovalResult) {
+        final approvedNamespaces = result.namespaces;
+        // Auth requests
+        final authenticationRequests = args.params.requests?.authentication;
+        final formattedMessages = prepareAuthenticationMessages(
+          authenticationRequests,
+          approvedNamespaces,
+        );
 
-      if (result != WCBottomSheetResult.reject) {
-        // generatedNamespaces is constructed based on registered methods handlers
-        // so if you want to handle requests using onSessionRequest event then you would need to manually add that method in the approved namespaces
         try {
           final cacaos = await signAuthenticationMessages(formattedMessages);
 
+          // Build session properties, merging with proposal's existing ones
+          final sessionProperties = Map<String, String>.from(
+            args.params.sessionProperties ?? {},
+          );
+
+          // Add TON session properties if TON namespace is present
+          if (approvedNamespaces.containsKey('ton')) {
+            await _addTonSessionProperties(
+              sessionProperties,
+              approvedNamespaces,
+            );
+          }
+
           await _walletKit!.approveSession(
             id: args.id,
-            namespaces: args.params.generatedNamespaces!,
-            sessionProperties: args.params.sessionProperties,
+            namespaces: approvedNamespaces,
+            sessionProperties: sessionProperties,
             proposalRequestsResponses: ProposalRequestsResponses(
               authentication: cacaos,
             ),
           );
-          // MethodsUtils.handleRedirect(
-          //   session.topic,
-          //   session.session!.peer.metadata.redirect,
-          //   '',
-          //   true,
-          // );
         } on ReownSignError catch (error) {
           MethodsUtils.handleRedirect(
             '',
@@ -369,16 +467,58 @@ class WalletKitService extends IWalletKitService {
     }
   }
 
+  /// Adds TON-specific session properties (public key and state init)
+  Future<void> _addTonSessionProperties(
+    Map<String, String> sessionProperties,
+    Map<String, Namespace> namespaces,
+  ) async {
+    try {
+      final tonNamespace = namespaces['ton'];
+      if (tonNamespace == null || tonNamespace.accounts.isEmpty) return;
+
+      final firstAccount = tonNamespace.accounts.first;
+      final chainId = NamespaceUtils.getChainFromAccount(firstAccount);
+
+      final tonService = getChainService<TonService>(chainId: chainId);
+      final props = await tonService.getSessionProperties();
+
+      if (props != null) {
+        sessionProperties['ton_getPublicKey'] = props.publicKey;
+        sessionProperties['ton_getStateInit'] = props.stateInit;
+
+        final pkPreview = props.publicKey.length > 10
+            ? '${props.publicKey.substring(0, 10)}...'
+            : props.publicKey;
+        final siPreview = props.stateInit.length > 10
+            ? '${props.stateInit.substring(0, 10)}...'
+            : props.stateInit;
+        debugPrint(
+          '[$runtimeType] Added TON session properties: '
+          'ton_getPublicKey=$pkPreview, '
+          'ton_getStateInit=$siPreview',
+        );
+      } else {
+        debugPrint('[$runtimeType] TON session properties not available');
+      }
+    } catch (e) {
+      debugPrint('[$runtimeType] Failed to add TON session properties: $e');
+    }
+  }
+
   void _onSessionProposalError(SessionProposalErrorEvent? args) async {
     debugPrint('[SampleWallet] _onSessionProposalError $args');
     DeepLinkHandler.waiting.value = false;
     if (args != null) {
       String errorMessage = args.error.message;
       if (args.error.code == 5100) {
-        errorMessage =
-            errorMessage.replaceFirst('Requested:', '\n\nRequested:');
-        errorMessage =
-            errorMessage.replaceFirst('Supported:', '\n\nSupported:');
+        errorMessage = errorMessage.replaceFirst(
+          'Requested:',
+          '\n\nRequested:',
+        );
+        errorMessage = errorMessage.replaceFirst(
+          'Supported:',
+          '\n\nSupported:',
+        );
       }
       MethodsUtils.goBackModal(
         title: 'Error',
@@ -391,7 +531,7 @@ class WalletKitService extends IWalletKitService {
   void _onSessionConnect(SessionConnect? args) {
     if (args != null) {
       final session = jsonEncode(args.session.toJson());
-      log('[SampleWallet] _onSessionConnect $session');
+      debugPrint('[SampleWallet] _onSessionConnect $session');
       MethodsUtils.handleRedirect(
         args.session.topic,
         args.session.peer.metadata.redirect,
@@ -428,30 +568,30 @@ class WalletKitService extends IWalletKitService {
       // which is only available for eip155 namespace and it's going to be deprecated soon
       final chainKeys = GetIt.I<IKeyService>().getKeysForChain('eip155');
       final address = chainKeys.first.address;
-      final formattedMessages = prepareAuthenticationMessages(
-        [authenticationRequest],
-        {
-          'eip155': Namespace(
-            accounts: supportedChains.map((e) => '$e:$address').toList(),
-            methods: supportedMethods.toList(),
-            events: EventsConstants.allEvents,
-          )
-        },
+
+      final result = await _bottomSheetHandler.queueBottomSheet(
+        widget: WCConnectModal(
+          sessionAuthPayload: authenticationRequest,
+          verifyContext: args.verifyContext,
+          requester: args.requester,
+        ),
       );
 
-      final WCBottomSheetResult rs =
-          (await _bottomSheetHandler.queueBottomSheet(
-                widget: WCSessionAuthRequestWidget(
-                  child: WCConnectionRequestWidget(
-                    sessionAuthPayload: authenticationRequest,
-                    verifyContext: args.verifyContext,
-                    requester: args.requester,
-                  ),
-                ),
-              )) ??
-              WCBottomSheetResult.reject;
-
-      if (rs != WCBottomSheetResult.reject) {
+      if (result is AuthApprovalResult) {
+        final selectedChains = result.selectedChainIds;
+        // Filter supported chains to only include selected ones
+        final filteredChains =
+            supportedChains.where((c) => selectedChains.contains(c)).toList();
+        final formattedMessages = prepareAuthenticationMessages(
+          [authenticationRequest],
+          {
+            'eip155': Namespace(
+              accounts: filteredChains.map((e) => '$e:$address').toList(),
+              methods: supportedMethods.toList(),
+              events: EventsConstants.allEvents,
+            ),
+          },
+        );
         try {
           final cacaos = await signAuthenticationMessages(formattedMessages);
           final session = await _walletKit!.approveSessionAuthenticate(
@@ -487,46 +627,6 @@ class WalletKitService extends IWalletKitService {
     }
   }
 
-  @override
-  List<(ISS, AuthMessage, AuthRequest)> prepareAuthenticationMessages(
-    List<SessionAuthPayload>? authenticationRequests,
-    Map<String, Namespace>? generatedNamespaces,
-  ) {
-    final List<(String, String, SessionAuthPayload)> formattedMessages = [];
-    if (authenticationRequests == null || authenticationRequests.isEmpty) {
-      return formattedMessages;
-    }
-
-    if (generatedNamespaces == null || generatedNamespaces.isEmpty) {
-      return formattedMessages;
-    }
-
-    for (var request in authenticationRequests) {
-      for (var chain in request.chains) {
-        try {
-          final namespace = NamespaceUtils.getNamespaceFromChain(chain);
-          final namespaces = generatedNamespaces[namespace];
-          final account = namespaces?.accounts.first;
-          if (account != null) {
-            final address = NamespaceUtils.getAccount(account);
-            final iss = 'did:pkh:$chain:$address';
-            final message = _walletKit!.formatAuthMessage(
-              iss: iss,
-              cacaoPayload: CacaoRequestPayload.fromSessionAuthPayload(
-                request,
-              ),
-            );
-            formattedMessages.add((iss, message, request));
-          }
-        } catch (e, s) {
-          debugPrint('❌ prepareAuthenticationMessages error: $e, $s');
-        }
-      }
-    }
-
-    return formattedMessages;
-  }
-
   Future<List<Cacao>> signAuthenticationMessages(
     List<(String, String, SessionAuthPayload)> messagesToSign,
   ) async {
@@ -548,14 +648,8 @@ class WalletKitService extends IWalletKitService {
         final publicKey = result.$3;
 
         final auth = AuthSignature.buildAuthObject(
-          requestPayload: CacaoRequestPayload.fromSessionAuthPayload(
-            request,
-          ),
-          signature: CacaoSignature(
-            s: signature,
-            t: type,
-            m: publicKey,
-          ),
+          requestPayload: CacaoRequestPayload.fromSessionAuthPayload(request),
+          signature: CacaoSignature(s: signature, t: type, m: publicKey),
           iss: iss,
         );
         signedAuths.add(auth);
@@ -632,6 +726,121 @@ class WalletKitService extends IWalletKitService {
         return CacaoSignature.ED25519;
       default:
         return namespace;
+    }
+  }
+
+  String get _flavor {
+    String flavor = '-${const String.fromEnvironment('FLUTTER_APP_FLAVOR')}';
+    return flavor.replaceAll('-production', '');
+  }
+
+  String _universalLink() {
+    Uri link = Uri.parse('https://appkit-lab.reown.com/flutter_walletkit');
+    if (_flavor.isNotEmpty || kDebugMode) {
+      return link.replace(path: '${link.path}_internal').toString();
+    }
+    return link.toString();
+  }
+
+  Redirect _constructRedirect(bool linkModeEnabled) {
+    return Redirect(
+      native: 'wcflutterwallet$_flavor://',
+      universal: _universalLink(),
+      // enable linkMode on Wallet so Dapps can use relay-less connection
+      // universal: value must be set on cloud config as well
+      linkMode: linkModeEnabled,
+    );
+  }
+
+  // WalletConnectPay related UX
+
+  /// Processes the payment flow: shows payment details, confirms payment, and displays the result.
+  Future<dynamic> _processPayment(PaymentOptionsResponse response) async {
+    final hasCollectData = response.options.any(
+      (o) => o.collectData?.url != null && o.collectData!.url!.isNotEmpty,
+    );
+    final infoButtonNotifier =
+        hasCollectData ? ValueNotifier<bool>(true) : null;
+    final showInfoPage = ValueNotifier<bool>(false);
+    final result = await _bottomSheetHandler.queueBottomSheet(
+      widget: WCPPaymentDetailsWidget(
+        paymentOptionsResponse: response,
+        paymentRequest: _pendingPaymentRequest!,
+        infoButtonNotifier: infoButtonNotifier,
+        showInfoPageNotifier: showInfoPage,
+      ),
+      leadingWidget: ValueListenableBuilder<bool>(
+        valueListenable: showInfoPage,
+        builder: (_, isShowingInfo, __) {
+          return AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            child: isShowingInfo
+                ? WCPSheetIconButton(
+                    key: const ValueKey('back_button'),
+                    icon: Icons.arrow_back,
+                    showBorder: false,
+                    onPressed: () => showInfoPage.value = false,
+                  )
+                : infoButtonNotifier != null
+                    ? ValueListenableBuilder<bool>(
+                        key: const ValueKey('info_button'),
+                        valueListenable: infoButtonNotifier,
+                        builder: (_, visible, __) => visible
+                            ? WCPInfoButton(
+                                onTap: () => showInfoPage.value = true,
+                              )
+                            : const SizedBox(width: 38),
+                      )
+                    : const SizedBox(
+                        key: ValueKey('spacer'),
+                        width: 38,
+                      ),
+          );
+        },
+      ),
+    );
+
+    // Payment expired/failed during collectData — skip confirming, show result.
+    if (result is PaymentStatus) {
+      await _bottomSheetHandler.queueBottomSheet(
+        widget: WCPPaymentResult(
+          status: result,
+          info: _currentPaymentOptions!.info!,
+        ),
+      );
+      _pendingPaymentRequest = null;
+      _currentPaymentOptions = null;
+      return;
+    }
+
+    if (result is! ConfirmPaymentRequest) {
+      _pendingPaymentRequest = null;
+      _currentPaymentOptions = null;
+      throw result;
+    }
+
+    // Step 2: Confirming Payment
+    final paymentStatusResult = await _bottomSheetHandler.queueBottomSheet(
+      widget: WCPConfirmingPayment(paymentRequest: result),
+    );
+    if (paymentStatusResult is! PaymentStatus) {
+      _pendingPaymentRequest = null;
+      _currentPaymentOptions = null;
+      throw paymentStatusResult;
+    }
+
+    // Step 3: Payment Result
+    final resultStatus = await _bottomSheetHandler.queueBottomSheet(
+      widget: WCPPaymentResult(
+        status: paymentStatusResult,
+        info: _currentPaymentOptions!.info!,
+      ),
+    );
+    _pendingPaymentRequest = null;
+    _currentPaymentOptions = null;
+
+    if (resultStatus != WCBottomSheetResult.next.name) {
+      throw resultStatus;
     }
   }
 }

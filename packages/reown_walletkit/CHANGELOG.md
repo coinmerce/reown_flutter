@@ -1,3 +1,11 @@
+## 1.4.0
+
+- Support for WalletConnectPay
+
+## 1.3.9
+
+- Dependency updates
+
 ## 1.3.8
 
 - One Click Auth for non-EVM chains

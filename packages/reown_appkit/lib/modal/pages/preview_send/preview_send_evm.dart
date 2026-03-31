@@ -9,7 +9,6 @@ import 'package:reown_appkit/modal/constants/key_constants.dart';
 import 'dart:ui' as ui;
 
 import 'package:reown_appkit/modal/models/send_data.dart';
-import 'package:reown_appkit/modal/pages/preview_send/utils.dart';
 import 'package:reown_appkit/modal/pages/preview_send/widgets.dart';
 import 'package:reown_appkit/modal/services/analytics_service/i_analytics_service.dart';
 import 'package:reown_appkit/modal/services/analytics_service/models/analytics_event.dart';
@@ -20,7 +19,7 @@ import 'package:reown_appkit/modal/services/toast_service/models/toast_message.d
 import 'package:reown_appkit/modal/utils/core_utils.dart';
 import 'package:reown_appkit/modal/widgets/icons/rounded_icon.dart';
 import 'package:reown_appkit/modal/widgets/widget_stack/i_widget_stack.dart';
-import 'package:reown_appkit/reown_appkit.dart' hide TransactionExtension;
+import 'package:reown_appkit/reown_appkit.dart';
 import 'package:reown_appkit/modal/constants/style_constants.dart';
 import 'package:reown_appkit/modal/widgets/modal_provider.dart';
 import 'package:reown_appkit/modal/widgets/navigation/navbar.dart';
@@ -142,12 +141,13 @@ class _PreviewSendEvmState extends State<PreviewSendEvm> {
         amount: max(0.000000, actualValueToSend).toString(),
       );
       _transaction = Transaction(
+        from: EthereumAddress.fromHex(_senderAddress),
         to: EthereumAddress.fromHex(_recipientAddress),
         value: EtherAmount.fromBigInt(
           EtherUnit.wei,
           _valueToBigInt(actualValueToSend),
         ),
-        data: utf8.encode('0x'),
+        // data: utf8.encode('0x'),
       );
     }
     _logger('[$runtimeType] transaction ${jsonEncode(_transaction?.toJson())}');
@@ -216,6 +216,13 @@ class _PreviewSendEvmState extends State<PreviewSendEvm> {
       _toastService.show(
         ToastMessage(type: ToastType.error, text: e.toString()),
       );
+    } on JsonRpcError catch (e) {
+      _toastService.show(
+        ToastMessage(
+          type: ToastType.error,
+          text: e.message ?? 'Some error happened',
+        ),
+      );
     }
   }
 
@@ -231,8 +238,8 @@ class _PreviewSendEvmState extends State<PreviewSendEvm> {
         sendAmount: valueToSend,
       ),
     );
+    final appKitModal = ModalProvider.of(context).instance;
     try {
-      final appKitModal = ModalProvider.of(context).instance;
       final response = await appKitModal.request(
         topic: appKitModal.session!.topic,
         chainId: _sendTokenData.chainId!,
@@ -270,6 +277,17 @@ class _PreviewSendEvmState extends State<PreviewSendEvm> {
     } on Exception catch (e) {
       _toastService.show(
         ToastMessage(type: ToastType.error, text: e.toString()),
+      );
+      _analyticsService.sendEvent(
+        WalletFeatureSendError(
+          network: _sendTokenData.chainId!,
+          sendToken: _sendTokenData.symbol!,
+          sendAmount: valueToSend,
+        ),
+      );
+    } on JsonRpcError catch (e) {
+      _toastService.show(
+        ToastMessage(type: ToastType.error, text: e.message ?? 'Error'),
       );
       _analyticsService.sendEvent(
         WalletFeatureSendError(

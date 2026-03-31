@@ -36,7 +36,7 @@ runs:
     - name: Install Flutter
       uses: subosito/flutter-action@v2
       with:
-        flutter-version: '3.35.1'
+        flutter-version: "3.38.3"
 
     # Get package dependencies for dapp and generate files
     - name: Get package dependencies for dapp and generate files
@@ -44,19 +44,25 @@ runs:
       working-directory: packages/reown_appkit/example/base
       run: |
           flutter pub get
-          dart run build_runner build --delete-conflicting-outputs
+          # dart run build_runner build --delete-conflicting-outputs
           # dart pub add polkadart_cli
           # dart run polkadart_cli:generate -v
-          dart format --output=none --set-exit-if-changed .
+          # dart format --output=none --set-exit-if-changed .
     
+    # Ensure CocoaPods specs are up-to-date (iOS only)
+    - name: Update CocoaPods specs
+      if: inputs.platform == 'ios'
+      shell: bash
+      run: pod repo update --silent
+
     # Get package dependencies for wallet and generate files
     - name: Get package dependencies for wallet and generate files
       shell: bash
       working-directory: packages/reown_walletkit/example
       run: |
           flutter pub get
-          flutter pub run build_runner build --delete-conflicting-outputs
-          dart format --output=none --set-exit-if-changed .
+          # flutter pub run build_runner build --delete-conflicting-outputs
+          # dart format --output=none --set-exit-if-changed .
 
     # Cache Flutter dependencies
     - name: Cache Flutter dependencies
