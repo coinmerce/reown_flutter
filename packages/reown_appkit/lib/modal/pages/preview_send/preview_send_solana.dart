@@ -8,7 +8,6 @@ import 'package:get_it/get_it.dart';
 import 'dart:ui' as ui;
 
 import 'package:reown_appkit/modal/models/send_data.dart';
-import 'package:reown_appkit/modal/pages/preview_send/utils.dart';
 import 'package:reown_appkit/modal/pages/preview_send/widgets.dart';
 import 'package:reown_appkit/modal/services/analytics_service/i_analytics_service.dart';
 import 'package:reown_appkit/modal/services/analytics_service/models/analytics_event.dart';
@@ -120,17 +119,8 @@ class _PreviewSendSolanaState extends State<PreviewSendSolana> {
 
   Future<solana.Transaction> _contructSolanaTX(double valueToSend) async {
     // Create a connection to the devnet cluster.
-    final chainId = ReownAppKitModalNetworks.getIdFromChain(
-      _sendTokenData.chainId!,
-    );
-    final chainInfo = ReownAppKitModalNetworks.getNetworkInfo(
-      'solana',
-      chainId,
-    );
-    // Create a connection to the devnet cluster.
     final appKitModal = ModalProvider.of(context).instance;
-    final projectId = appKitModal.appKit!.core.projectId;
-    final rpcUrl = chainInfo!.formattedRpcUrl(projectId);
+    final rpcUrl = appKitModal.selectedChain!.extraRpcUrls.first;
     final cluster = solana.Cluster.https(Uri.parse(rpcUrl).authority);
     // final cluster = solana.Cluster.devnet;
     final connection = solana.Connection(cluster);
@@ -183,18 +173,9 @@ class _PreviewSendSolanaState extends State<PreviewSendSolana> {
 
   Future<void> _estimateNetworkCost() async {
     try {
-      final chainId = ReownAppKitModalNetworks.getIdFromChain(
-        _sendTokenData.chainId!,
-      );
-      final chainInfo = ReownAppKitModalNetworks.getNetworkInfo(
-        'solana',
-        chainId,
-      );
-
       // Create a connection to the devnet cluster.
       final appKitModal = ModalProvider.of(context).instance;
-      final projectId = appKitModal.appKit!.core.projectId;
-      final rpcUrl = chainInfo!.formattedRpcUrl(projectId);
+      final rpcUrl = appKitModal.selectedChain!.extraRpcUrls.first;
       final cluster = solana.Cluster.https(Uri.parse(rpcUrl).authority);
       // final cluster = solana.Cluster.devnet;
       final connection = solana.Connection(cluster);
@@ -268,6 +249,10 @@ class _PreviewSendSolanaState extends State<PreviewSendSolana> {
           },
         ),
       );
+      if (response is Map && response.containsKey('errorCode')) {
+        throw Exception('${response['errorMessage']}');
+      }
+
       _analyticsService.sendEvent(
         WalletFeatureSendSuccess(
           network: _sendTokenData.chainId!,
@@ -292,8 +277,20 @@ class _PreviewSendSolanaState extends State<PreviewSendSolana> {
       );
     } on Exception catch (e) {
       _toastService.show(
-        ToastMessage(type: ToastType.error, text: e.toString()),
+        ToastMessage(
+          type: ToastType.error,
+          text: e.toString().replaceFirst('Exception: ', ''),
+        ),
       );
+      _analyticsService.sendEvent(
+        WalletFeatureSendError(
+          network: _sendTokenData.chainId!,
+          sendToken: _sendTokenData.symbol!,
+          sendAmount: valueToSend,
+        ),
+      );
+    } on ReownSignError catch (e) {
+      _toastService.show(ToastMessage(type: ToastType.error, text: e.message));
       _analyticsService.sendEvent(
         WalletFeatureSendError(
           network: _sendTokenData.chainId!,
