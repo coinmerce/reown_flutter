@@ -41,7 +41,6 @@ class SecureStore implements IStore<Map<String, dynamic>> {
     try {
       // Try secure storage first
       _secureStorage = const FlutterSecureStorage(
-        aOptions: AndroidOptions(encryptedSharedPreferences: true),
         iOptions: IOSOptions(
           accessibility: KeychainAccessibility.first_unlock_this_device,
         ),
