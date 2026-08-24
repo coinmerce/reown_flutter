@@ -18,7 +18,7 @@ This skill encodes project-specific conventions including interface-based design
 - **Published Packages**: https://pub.dev/publishers/reown.com/packages
 - **Documentation**: 
   - AppKit: https://docs.reown.com/appkit/flutter/core/installation
-  - WalletKit: https://docs.reown.com/walletkit/flutter/installation
+  - WalletKit: https://docs.walletconnect.network/wallet-sdk/flutter/installation
 - **License**: Apache 2.0
 
 ### Tech Stack
@@ -336,6 +336,24 @@ Most packages use code generation:
 - **Widget Tests**: Test UI components
 - **Integration Tests**: End-to-end flows (using Maestro)
 - **Mocking**: Use `mockito` for dependencies
+
+### Maestro E2E Pay Tests
+
+WalletConnect Pay flows are tested with [Maestro](https://maestro.mobile.dev/) E2E tests. Test flows are **shared** across RN, Kotlin, and Flutter wallet samples and live in the [WalletConnect/actions](https://github.com/WalletConnect/actions) repo (not in this repo).
+
+**Test ID convention**: Flutter widgets use `Semantics(identifier: 'test-id', label: 'test-id')` which maps to Android `resource-id` for Maestro's `id:` selector. Most Pay-specific IDs are prefixed with `pay-` (e.g. `pay-button-pay`, `pay-option-0`, `pay-result-success-icon`), while scan modal URL controls currently use `input-paste-url` and `button-submit-url`. Select-screen option rows additionally expose a stable, network+token-keyed id `pay-option-{assetSymbol}-{networkName}` (lowercased, spaces → `-`, e.g. `pay-option-usdt-polygon`) wrapping the index-based `pay-option-{index}`, so a flow can pick a specific asset+network when a token appears on multiple networks. The first-time token-setup note (e.g. the USDT Permit2 `approve` step) is exposed as `pay-loading-setup-note`.
+
+**USDT-on-Polygon (Permit2) flow** (`pay_usdt_polygon`): USDT on Polygon is a plain ERC-20 (no EIP-3009/2612), so WC Pay uses the Permit2 path — the wallet sends an on-chain `approve` (allowance) tx **and then** the payment tx. (USDT on Arbitrum is EIP-3009 / signature-based, so it never needs an on-chain approve; Polygon is used precisely because it does.) To keep `approve` exercised on every run, CI resets the Permit2 allowance back to `0` after the suite via the shared `WalletConnect/actions/maestro/permit2-reset` action (a Node step that signs a tx — the private key goes via env, never the CLI). The test wallet must hold USDT **and** a little POL (gas) on Polygon.
+
+**Test mode**: Build with `--dart-define="ENABLE_TEST_MODE=true"` to enable the URL paste flow used by Maestro tests. In current behavior, scan/paste options are still shown and the URL controls are exposed via `input-paste-url` and `button-submit-url`. Build with `--dart-define="TEST_WALLET_PRIVATE_KEY=<hex>"` to use a funded wallet.
+
+**Running locally**:
+1. `./scripts/setup-maestro-pay-tests.sh` — downloads test flows from WalletConnect/actions
+2. Copy `.env.maestro.example` to `.env.maestro` with merchant secrets
+3. Build APK with test mode + funded wallet private key
+4. `APP_ID=com.walletconnect.flutterwallet.internal ./scripts/run-maestro-pay-tests.sh`
+
+**CI**: `.github/workflows/ci_e2e_pay_tests.yml` runs Android (`ubuntu-16core`, emulator) and iOS (`macos-26-xlarge`, simulator) lanes. It uses shared pay test flows and never uploads APK/IPA — only debug output.
 
 ### Platform-Specific Code
 

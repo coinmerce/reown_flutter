@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get_it/get_it.dart';
-import 'package:qr_bar_code_scanner_dialog/qr_bar_code_scanner_dialog.dart';
 import 'package:reown_walletkit/reown_walletkit.dart';
 import 'package:reown_walletkit_wallet/dependencies/deep_link_handler.dart';
 import 'package:reown_walletkit_wallet/dependencies/i_walletkit_service.dart';
@@ -12,9 +11,24 @@ import 'package:reown_walletkit_wallet/main.dart' show navigatorKey;
 import 'package:reown_walletkit_wallet/theme/app_colors.dart';
 import 'package:reown_walletkit_wallet/theme/app_radius.dart';
 import 'package:reown_walletkit_wallet/theme/app_spacing.dart';
+import 'package:reown_walletkit_wallet/utils/dart_defines.dart';
+import 'package:reown_walletkit_wallet/widgets/qr_scanner_page.dart';
 
-class ScanModal extends StatelessWidget {
+class ScanModal extends StatefulWidget {
   const ScanModal({super.key});
+
+  @override
+  State<ScanModal> createState() => _ScanModalState();
+}
+
+class _ScanModalState extends State<ScanModal> {
+  final _urlController = TextEditingController();
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,21 +51,85 @@ class ScanModal extends StatelessWidget {
           onTap: () => _onPasteUri(context),
           colors: colors,
         ),
+        if (DartDefines.enableTestMode) ...[
+          const SizedBox(height: AppSpacing.s2),
+          Semantics(
+            container: true,
+            identifier: 'input-paste-url',
+            label: 'input-paste-url',
+            child: TextField(
+              controller: _urlController,
+              decoration: InputDecoration(
+                hintText: 'Paste URL here',
+                hintStyle: TextStyle(color: colors.textSecondary),
+                filled: true,
+                fillColor: colors.backgroundSecondary,
+                border: OutlineInputBorder(
+                  borderRadius: AppRadius.borderRadiusLg,
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.s4,
+                  vertical: AppSpacing.s4,
+                ),
+              ),
+              style: TextStyle(color: colors.textPrimary, fontSize: 16.0),
+              textInputAction: TextInputAction.done,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s2),
+          Semantics(
+            container: true,
+            identifier: 'button-submit-url',
+            label: 'button-submit-url',
+            child: GestureDetector(
+              onTap: () => _onSubmitUrl(context),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(AppSpacing.s4),
+                decoration: BoxDecoration(
+                  color: colors.accent,
+                  borderRadius: AppRadius.borderRadiusLg,
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  'Submit',
+                  style: TextStyle(
+                    color: colors.onAccent,
+                    fontSize: 16.0,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
 
-  void _onScanQrCode(BuildContext context) {
+  void _onSubmitUrl(BuildContext context) {
+    final uri = _urlController.text.trim();
+    if (uri.isEmpty) return;
+    Navigator.of(context).pop();
+    _pairWithUri(uri);
+  }
+
+  Future<void> _onScanQrCode(BuildContext context) async {
     Navigator.of(context).pop();
     final rootContext = navigatorKey.currentContext;
     if (rootContext == null) return;
     try {
-      QrBarCodeScannerDialog().getScannedQrBarCode(
-        context: rootContext,
-        onCode: (value) {
-          _pairWithUri(value);
-        },
+      final value = await Navigator.of(rootContext).push<String>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => const QrScannerPage(),
+        ),
       );
+      if (value == null || value.isEmpty) return;
+      // Defer pairing to the next frame so the scanner's teardown never
+      // shares a frame with the request modal's open animation.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _pairWithUri(value));
     } catch (e) {
       debugPrint('[ScanModal] scan error: $e');
     }
